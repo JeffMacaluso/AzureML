@@ -16,6 +16,11 @@ dependencies:
   # The python interpreter version.
   # Currently Azure ML Workbench only supports 3.5.2.
   - python=3.5.2
+  - pandas
+  - tensorflow
+
+  # Uncomment if using a GPU
+  # - tensorflow-gpu
 
   # Required for Jupyter Notebooks.
   - ipykernel=4.6.1
@@ -27,3 +32,6 @@ dependencies:
 
     # Helper utilities for dealing with Azure ML Workbench Assets.
     - https://azuremldownloads.blob.core.windows.net/wheels/latest/azureml.assets-1.0.0-py3-none-any.whl?sv=2016-05-31&si=ro-2017&sr=c&sig=xnUdTm0B%2F%2FfknhTaRInBXyu2QTTt8wA3OsXwGVgU%2BJk%3D
+    
+    # Library for collecting data from operationalized models
+    - azureml.datacollector==0.1.0a13
