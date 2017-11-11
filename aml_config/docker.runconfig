@@ -12,7 +12,7 @@ EnvironmentVariables:
   "EXAMPLE_ENV_VAR": "Example Value"
 
 # Framework to execute inside. Allowed values are "Python" and "PySpark".
-Framework: "PySpark"
+Framework: "Python"
 
 # Path to the Conda dependencies file to use for this run. If a project
 # contains multiple programs with different sets of dependencies, it may be

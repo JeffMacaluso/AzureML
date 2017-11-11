@@ -1,0 +1,8 @@
+address: 51.143.21.164
+baseDockerImage: microsoft/mmlspark:plus-gpu-0.7.91
+nativeSharedDirectory: ~/.azureml/share/
+password: AzureMlSecret=dsVMGPU#macaluso#77b3fe07eaf64fc0bc536bf43562880f
+sharedVolumes: true
+type: remotedocker
+username: macaluso
+nvidiaDocker: true

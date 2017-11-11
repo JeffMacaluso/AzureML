@@ -1,165 +1,111 @@
-'''
-A Convolutional Network implementation example using TensorFlow library.
-This example is using the MNIST database of handwritten digits
-(http://yann.lecun.com/exdb/mnist/)
-
-Author: Aymeric Damien
-Project: https://github.com/aymericdamien/TensorFlow-Examples/
-'''
+"""
+This script contains the code to train and save the model
+"""
 
 from __future__ import print_function
-
 import os
+import keras
+from keras.datasets import mnist
+from keras.models import Sequential
+from keras.layers import Dense, Dropout, Flatten
+from keras.layers import Conv2D, MaxPooling2D
+from keras import backend as K
 
-import tensorflow as tf
-import pandas
 from azureml.logging import get_azureml_logger
-
-import pickle
 
 run_logger = get_azureml_logger()
 
 # Create the outputs folder - save any outputs you want managed by AzureML here
 os.makedirs('./outputs', exist_ok=True)
 
-# Import MNIST data
-from tensorflow.examples.tutorials.mnist import input_data
-mnist = input_data.read_data_sets("/tmp/data/", one_hot=True)
-
-# Parameters
-learning_rate = 0.01
-# training_iters = 200000
-training_iters = 750  # 5k Runs in ~60 seconds on my local machine
 batch_size = 128
-display_step = 10
+num_classes = 10
+
+# input image dimensions
+img_rows, img_cols = 28, 28
+
+# the data, shuffled and split between train and test sets
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+
+if K.image_data_format() == 'channels_first':
+    x_train = x_train.reshape(x_train.shape[0], 1, img_rows, img_cols)
+    x_test = x_test.reshape(x_test.shape[0], 1, img_rows, img_cols)
+    input_shape = (1, img_rows, img_cols)
+else:
+    x_train = x_train.reshape(x_train.shape[0], img_rows, img_cols, 1)
+    x_test = x_test.reshape(x_test.shape[0], img_rows, img_cols, 1)
+    input_shape = (img_rows, img_cols, 1)
+
+x_train = x_train.astype('float32')
+x_test = x_test.astype('float32')
+x_train /= 255
+x_test /= 255
+print('x_train shape:', x_train.shape)
+print(x_train.shape[0], 'train samples')
+print(x_test.shape[0], 'test samples')
+
+# Shortening the number of training examples
+training_size = 20000
+x_train = x_train[:training_size]
+y_train = y_train[:training_size]
 
 # Network Parameters
-n_input = 784  # MNIST data input (img shape: 28*28)
-n_classes = 10  # MNIST total classes (0-9 digits)
-dropout = 0.75  # Dropout, probability to keep units
+epochs = 1
+dropout = 0.65
+learning_rate = 0.001
+
 
 # Tracking metrics
-run_logger.log("Training Iterations", training_iters)
+run_logger.log("Training Iterations", training_size)
+run_logger.log("Epochs", epochs)
 run_logger.log("Learning Rate", learning_rate)
 run_logger.log("Dropout", dropout)
 
-# tf Graph input
-x = tf.placeholder(tf.float32, [None, n_input])
-y = tf.placeholder(tf.float32, [None, n_classes])
-keep_prob = tf.placeholder(tf.float32)  # dropout (keep probability)
+# convert class vectors to binary class matrices
+y_train = keras.utils.to_categorical(y_train, num_classes)
+y_test = keras.utils.to_categorical(y_test, num_classes)
+
+# Logging the architecture used in the model
+architecture = '3x3 -> 3x3 -> MaxPooling -> 128'
+run_logger.log("Architecture", architecture)
 
 
-# Create some wrappers for simplicity
-def conv2d(x, W, b, strides=1):
-    # Conv2D wrapper, with bias and relu activation
-    x = tf.nn.conv2d(x, W, strides=[1, strides, strides, 1], padding='SAME')
-    x = tf.nn.bias_add(x, b)
-    return tf.nn.relu(x)
+# First layer - Conv 3x3
+model = Sequential()
+model.add(Conv2D(32, kernel_size=(3, 3),
+                 activation='relu',
+                 input_shape=input_shape))
 
+# Second layer - Conv 3x3
+model.add(Conv2D(64, (3, 3), activation='relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(Dropout(dropout/2))
 
-def maxpool2d(x, k=2):
-    # MaxPool2D wrapper
-    return tf.nn.max_pool(x, ksize=[1, k, k, 1], strides=[1, k, k, 1],
-                          padding='SAME')
+# Third layer - Dense 128
+model.add(Flatten())
+model.add(Dense(128, activation='relu'))
+model.add(Dropout(dropout))
 
+# Output layer
+model.add(Dense(num_classes, activation='softmax'))
 
-# Create model
-def conv_net(x, weights, biases, dropout):
-    # Reshape input picture
-    x = tf.reshape(x, shape=[-1, 28, 28, 1])
+model.compile(loss=keras.losses.categorical_crossentropy,
+              optimizer=keras.optimizers.Adam(lr=learning_rate),
+              metrics=['accuracy'])
 
-    # Convolution Layer
-    conv1 = conv2d(x, weights['wc1'], biases['bc1'])
-    # Max Pooling (down-sampling)
-    conv1 = maxpool2d(conv1, k=2)
+print('Beginning training')
+model.fit(x_train, y_train,
+          batch_size=batch_size,
+          epochs=epochs,
+          verbose=0,  # Change to 1 to display status bars
+          validation_data=(x_test, y_test))
+score = model.evaluate(x_test, y_test, verbose=0)
+print('\nTest loss:', score[0])
+print('Test accuracy:', score[1])
 
-    # Convolution Layer
-    conv2 = conv2d(conv1, weights['wc2'], biases['bc2'])
-    # Max Pooling (down-sampling)
-    conv2 = maxpool2d(conv2, k=2)
+# Logging 
+run_logger.log("Test Loss", score[0])
+run_logger.log("Test Accuracy", score[1])
 
-    # Fully connected layer
-    # Reshape conv2 output to fit fully connected layer input
-    fc1 = tf.reshape(conv2, [-1, weights['wd1'].get_shape().as_list()[0]])
-    fc1 = tf.add(tf.matmul(fc1, weights['wd1']), biases['bd1'])
-    fc1 = tf.nn.relu(fc1)
-    # Apply Dropout
-    fc1 = tf.nn.dropout(fc1, dropout)
-
-    # Output, class prediction
-    out = tf.add(tf.matmul(fc1, weights['out']), biases['out'])
-    return out
-
-# Store layers weight & bias
-weights = {
-    # 5x5 conv, 1 input, 32 outputs
-    'wc1': tf.Variable(tf.random_normal([5, 5, 1, 32])),
-    # 5x5 conv, 32 inputs, 64 outputs
-    'wc2': tf.Variable(tf.random_normal([5, 5, 32, 64])),
-    # fully connected, 7*7*64 inputs, 1024 outputs
-    'wd1': tf.Variable(tf.random_normal([7*7*64, 1024])),
-    # 1024 inputs, 10 outputs (class prediction)
-    'out': tf.Variable(tf.random_normal([1024, n_classes]))
-}
-
-biases = {
-    'bc1': tf.Variable(tf.random_normal([32])),
-    'bc2': tf.Variable(tf.random_normal([64])),
-    'bd1': tf.Variable(tf.random_normal([1024])),
-    'out': tf.Variable(tf.random_normal([n_classes]))
-}
-
-# Construct model
-pred = conv_net(x, weights, biases, keep_prob)
-
-# Define loss and optimizer
-cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=y))
-optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
-
-# Evaluate model
-correct_pred = tf.equal(tf.argmax(pred, 1), tf.argmax(y, 1))
-accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
-
-# Initializing the variables
-init = tf.global_variables_initializer()
-
-# For saving the model
-saver = tf.train.Saver()
-
-# Launch the graph
-with tf.Session() as sess:
-    sess.run(init)
-    step = 1
-    # Keep training until reach max iterations
-    metrics = []
-    losses = []
-    while step * batch_size < training_iters:
-        batch_x, batch_y = mnist.train.next_batch(batch_size)
-        # Run optimization op (backprop)
-        sess.run(optimizer, feed_dict={x: batch_x, y: batch_y,
-                                       keep_prob: dropout})
-        if step % display_step == 0:
-            # Calculate batch loss and accuracy
-            loss, acc = sess.run([cost, accuracy], feed_dict={x: batch_x,
-                                                              y: batch_y,
-                                                              keep_prob: 1.})
-            print("Iter " + str(step*batch_size) + ", Minibatch Loss= " + \
-                  "{:.6f}".format(loss) + ", Training Accuracy= " + \
-                  "{:.5f}".format(acc))
-
-            # must convert numpy.float32 to float for the logging API
-            metrics.append(float(acc))
-            losses.append(float(loss))
-        step += 1
-    print("Optimization Finished!")
-    run_logger.log("Accuracy", metrics)
-    run_logger.log("Loss", losses)
-
-    # Calculate accuracy for 256 mnist test images
-    testing_accuracy = sess.run(accuracy, feed_dict={x: mnist.test.images[:256],
-                                      y: mnist.test.labels[:256],
-                                      keep_prob: 1.})
-    print("Testing Accuracy:", testing_accuracy)
-    save_path = saver.save(sess, './outputs/model.ckpt')
-
-run_logger.log("Testing Accuracy", float(testing_accuracy))
+# Saving the model
+model.save('./outputs/model.h5')
